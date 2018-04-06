@@ -38,6 +38,8 @@ def main():
         except Exception:
             continue
 
+    serial_port.close()
+
 
 if __name__ == '__main__':
     main()

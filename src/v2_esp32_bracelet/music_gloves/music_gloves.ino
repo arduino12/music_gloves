@@ -18,21 +18,28 @@ enum output_data_format_e {
 	X_ANGLE_DATA_FORMAT,
 	Y_ANGLE_DATA_FORMAT,
 	XY_ANGLE_DATA_FORMAT,
+	XYZ_ANGLE_DATA_FORMAT,
 };
 
 BluetoothSerial bt_serial;
 
-uint32_t next_output_ms;
-uint32_t output_interval_ms = SLOW_OUTPUT_INTERVAL;
 uint8_t output_data_format = XY_ANGLE_DATA_FORMAT;
+uint16_t output_interval_ms = SLOW_OUTPUT_INTERVAL;
+uint32_t next_output_ms;
 
 
 void read_input_command()
 {
 	char c = '\0';
 
-	if (bt_serial.available()) { // BUG! BT SLOW after 30 seconds..
-		c = bt_serial.read(); // bug starts from the first received byte, quick fix is to send another one each 5 seconds..
+	/*
+		BluetoothSerial BUG (as of 06/04/18):
+		Starting from the first received byte,
+		all transmited bytes will slow down after about 10 seconds...
+		Quick fix is to send another one each 5 seconds..
+	*/
+	if (bt_serial.available()) {
+		c = bt_serial.read();
 	}
 	
 	if (Serial.available()) {
@@ -53,7 +60,7 @@ void read_input_command()
 		output_data_format = XY_ANGLE_DATA_FORMAT;
 		break;
 	case 'E':
-		mpu6050_fix_gyro_offsets();
+		output_data_format = XYZ_ANGLE_DATA_FORMAT;
 		break;
 	case 'F':
 		output_interval_ms = FAST_OUTPUT_INTERVAL;
@@ -73,7 +80,6 @@ void write_output_data()
 		sprintf(buf, "%03.02f,%03.02f,%03.02f,%03.02f,%03.02f,%03.02f",
 			mpu6050_acc_x, mpu6050_acc_y, mpu6050_acc_z, 
 			mpu6050_gyro_angle_x, mpu6050_gyro_angle_y, mpu6050_gyro_angle_z);
-			// mpu6050_gyro_x, mpu6050_gyro_y, mpu6050_gyro_z);
 		break;
 	case X_ANGLE_DATA_FORMAT:
 		sprintf(buf, "%03.02f", mpu6050_angle_x);
@@ -83,6 +89,9 @@ void write_output_data()
 		break;
 	case XY_ANGLE_DATA_FORMAT:
 		sprintf(buf, "%03.02f,%03.02f", mpu6050_angle_x, mpu6050_angle_y);
+		break;
+	case XYZ_ANGLE_DATA_FORMAT:
+		sprintf(buf, "%03.02f,%03.02f,%03.02f", mpu6050_angle_x, mpu6050_angle_y, mpu6050_angle_z);
 		break;
 	}
 
@@ -119,6 +128,7 @@ void loop()
 		write_output_data();
 	}
 
-	delay(10);
+	yield();
+	delay(5);
 }
 
