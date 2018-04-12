@@ -41,7 +41,7 @@ void read_input_command()
 	if (bt_serial.available()) {
 		c = bt_serial.read();
 	}
-	
+
 	if (Serial.available()) {
 		c = Serial.read();
 	}
@@ -131,4 +131,3 @@ void loop()
 	yield();
 	delay(5);
 }
-

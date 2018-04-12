@@ -1,3 +1,12 @@
+"""
+9.4.2018  widened the gap in middle so pitch bend starts after wider null gap.
+smart watch on left hand but with sock which allows level sensor platform when left
+arm is with thumb 20 degrees higher than pink
+range not symetrical. easier for lrfy hand to tilt left then right.
+
+@date 5.4.2018
+Works with bluetooth and wifi
+"""
 import SocketServer
 # not used:
 # import OSC
@@ -14,6 +23,7 @@ import Tkinter as tk
 import ttk
 from array import *
 from multiprocessing import Process, Queue
+import bluetooth
 
 column_prnt=1
 
@@ -38,6 +48,17 @@ MIDI_LOOP_OUT = 'LoopBe Internal MIDI'
 # Background path
 BACKGROUND_PATH = 'C:\proj_b\AndoBend\wave.jpg'
 
+
+ROCKET_SENSOR_BLUETOOTH_SERVER_ADDRESS = ('00:15:FF:F3:1D:6A', 1, )
+#MUSIC_GLOVES_BLUETOOTH_SERVER_ADDRESS = ('30:AE:A4:26:6A:8A', 2, )
+# 4.4.18 til 8.4.18 orig esp32 board ^
+
+ # 30:AE:A4:23:C8:36',
+MUSIC_GLOVES_BLUETOOTH_SERVER_ADDRESS = ('30:AE:A4:23:C8:36', 2, )
+# 8 4 18 second esp32 bord glues batery
+
+
+
 # Gui global variable
 gui = None
 
@@ -55,9 +76,9 @@ glob_pitch_elevation_value = 0        # for gui
 # the reset value of OrientationPitch of FreqPitch
 glob_pitch_value_bias = 0                   # for gui
 # the threshold (saf) which the OrientationPitch starts to change the FreqPitch at
-glob_pitch_threshold_value = 10       # constant   to cause a pitch massage - pass the threshold filter
+glob_pitch_threshold_value = 30       # constant   to cause a pitch massage - pass the threshold filter. changed 9/4/2018 from 10 to 30
 # the maximum FreqPitch value which the OrientationPitch can set
-glob_pitch_saturation_value = 20      # constant
+glob_pitch_saturation_value = 80      # constant changed 9/4/2018 from 20 to 80
 # complicated
 glob_pitch_bias_buffer_size = 700     # constant
 pitch_bias_buffer = [0] * glob_pitch_bias_buffer_size
@@ -234,7 +255,7 @@ class Gui(tk.Tk):
         #self.scale_modulation_elevation["maximum"] = 180
         self.scale_modulation_bias.set(0)
      #   self.scale_modulation_bias["maximum"] = 180
-
+        global modulation_server
         if modulation_server:
             self.modulation_start_button.config(text='working')
             orient_thread = threading.Thread(target=modulation_server.serve_forever)
@@ -253,6 +274,7 @@ class Gui(tk.Tk):
 
         self.modulation_start_button.config(text='start')
         #global modulation_server
+        global modulation_server
         if modulation_server:
             print 'shutdowning modulation server'
             modulation_server.shutdown()
@@ -305,7 +327,10 @@ def initiate_modulation_bias_buffer(value):
 class OrientationAxis(object):
     def __init__(self, min, max):
         self.min = min
-        self.mid = (max - min) / 2
+
+# bug from 2015,        self.mid = (max - min) / 2
+#fixed 4.2018
+        self.mid = (max + min) / 2
         self.max = max
         self.range = max - min
 
@@ -464,134 +489,6 @@ class SensorHandlingServer(SocketServer.UDPServer):
     def handle_orientation(self, yaw_pitch_roll):
         raise NotImplementedError()
 
-
-class PitchFreqServer(SensorHandlingServer):
-    def __init__(self, bind_address, midiout):
-        print 'pitchfreqserver\tenter'
-        pitch_undefined_controller = MidiController(0x03)
-        pitch_wheel = PitchWheel()
-
-        print 'pitchfreqserver\tcreating sensorhandlingserver...'
-        SensorHandlingServer.__init__(
-            self,
-            bind_address,
-            yaw_to=pitch_undefined_controller,
-            pitch_to=pitch_wheel,
-            roll_to=pitch_undefined_controller,
-            midiout=midiout
-        )
-        print 'pitchfreqserver\tcreated sensorhandlingserver.'
-        global glob_pitch_first
-        glob_pitch_first = 1
-
-
-    def handle_orientation(self, yaw_pitch_roll):
-        print 'pitchfreqserver\thandle_orientation\tenter.'
-        global glob_pitch_elevation_value
-        global glob_pitch_threshold_value
-        global glob_pitch_first
-        global glob_pitch_bias
-        global glob_pitch_bias_buffer_size
-        global pitch_bias_buffer_pointer
-        global pitch_bias_buffer
-        'Translate orientation values to pitch control'
-        # if its the first time the function runs, set the parameters axis.min axis.max:
-        if dbg_print:
-            print "yaw_pitch_roll ",yaw_pitch_roll
-        ## 13-4-15 21:49  see any wi fi data in.
-
-        yaw_pitch_roll2 = list(yaw_pitch_roll)
-        if dbg_print:
-            print 'mila ' , yaw_pitch_roll
-        ## 13-4-15 21:49  see any wi fi data in.
-
-        pitch = yaw_pitch_roll2[1]
-        glob_pitch_elevation_value = pitch
-        # DEBUGGER
-        #import pdb ; pdb.set_trace()
-        if (glob_pitch_first == 1):
-            self.pitch_axis.set_axis(int(pitch))
-
-            glob_pitch_bias = pitch
-            initiate_pitch_bias_buffer(glob_pitch_bias)
-            # version 8.3 : consider changing or deleting the next line:
-            midi_msg = self.axis_num_to_contrlr[1].make_message(
-                int(self.Cmax_0_5 + float(self.axis_num_to_contrlr[1].max) / self.pitch_axis.range * (pitch - self.pitch_axis.mid)))
-            self.midiout.send_message(midi_msg)
-
-
-            # if its the first time the function runs, then Print the parameters rcvd ,  in any case ,  to see tkinut.
-            print "yaw_pitch_roll ",yaw_pitch_roll
-            ## 13-4-15 21:49  see any wi fi data in.
-
-            glob_pitch_first = 0
-            print "pitch recieved:   ", pitch  # 11.11.2013 canceled prints
-        ## 13-4-15 21:49  see any wi fi data in.
-
-        # Fixing axis_val to ergonomic limits
-        pitch = put_between(pitch, self.pitch_axis.min, self.pitch_axis.max)
-        if dbg_print:
-            print "pitch after fix:  ", pitch  # 11.11.2013 canceled prints
-        ## 13-4-15 21:49  see any wi fi data in.
-
-        # 20/10/2013 adding filter: send massage only if movement passed the threshold(far enough from mid point that was set in the start)
-        relative_pitch = pitch - self.pitch_axis.mid
-        is_beyond_threshold = [abs(relative_pitch) > glob_pitch_threshold_value]
-
-        deltas = [abs(last_val - val) for last_val, val in zip(self.last_vals, yaw_pitch_roll)]
-        is_delta_big = [delta > 0 for delta, axis in zip(deltas, self.axes)]
-        controller = self.axis_num_to_contrlr[1]  # controller gets the "class pitchWheel"
-        # controller.max = 16383 (2^14 - 1)
-
-        global glob_pitch_sent_pitch  # for gui
-        if (time.time() - self.last_time > self.min_interval) and any(is_delta_big):
-            if (is_beyond_threshold == [True]):
-                if (relative_pitch > 0):   #  relative_pitch > threshold
-                    # 0.49 & 0.4 are to normalize it to half tone. remove those to get one tone pitch
-                    glob_pitch_sent_pitch = int(
-                        self.Cmax_0_5 + float(controller.max)*0.49 / self.pitch_axis.range * (pitch - self.pitch_axis.upper_margin))
-                    midi_msg = controller.make_message(glob_pitch_sent_pitch)
-                else: # relative_pitch < -threshold
-                    glob_pitch_sent_pitch = int(
-                        self.Cmax_0_5 + float(controller.max)*0.409 / self.pitch_axis.range * (pitch - self.pitch_axis.lower_margin))
-                    midi_msg = controller.make_message(glob_pitch_sent_pitch)
-                self.midiout.send_message(midi_msg)
-                self.last_time = time.time()
-                self.last_vals = yaw_pitch_roll
-            else:   # player wants the bias pitch
-                glob_pitch_sent_pitch = int(self.Cmax_0_5)
-                midi_msg = self.axis_num_to_contrlr[1].make_message(glob_pitch_sent_pitch)
-                self.midiout.send_message(midi_msg)
-
-                if dbg_print:
-                    print midi_msg # if debug. was ovrflow
-
-                # set adaptive bias - moving average
-                pitch_bias_buffer_pointer += 1
-                pitch_bias_buffer[pitch_bias_buffer_pointer % glob_pitch_bias_buffer_size] = pitch;
-
-                glob_pitch_bias += (pitch_bias_buffer[(pitch_bias_buffer_pointer) % glob_pitch_bias_buffer_size] - pitch_bias_buffer[(pitch_bias_buffer_pointer+1) % glob_pitch_bias_buffer_size]) / glob_pitch_bias_buffer_size
-                self.pitch_axis.set_axis(glob_pitch_bias)
-
-        if dbg_print:
-
-            print "pitch: glob_pitch_sent_pitch \n"
-            print glob_pitch_sent_pitch
-
-            print "pitch: glob_pitch_bias \n"
-            print glob_pitch_bias
-        # prints were in remark in production version ^
-#        print 'pitch: before update_progressbar part'
-        global gui
-        try:
-            gui.update_pitchfreq_progressbar(glob_pitch_sent_pitch, glob_pitch_elevation_value, glob_pitch_bias)
-            if dbg_print:
-                print 'pitch: after gui.update_progressbar'
-        except Exception, e:
-            print 'pitch: error: %s' % e
-#        print 'pitch: after update_progressbar part'
-
-
 class ModulationFreqServer(SensorHandlingServer):
     def __init__(self, bind_address, midiout):
         modulation_undefined_controller = MidiController(0x03)
@@ -610,6 +507,7 @@ class ModulationFreqServer(SensorHandlingServer):
 
 
     def handle_orientation(self, yaw_pitch_roll):
+        print 'ModulationServer:handle_orientation enter'
         global glob_modulation_elevation_value
         global glob_modulation_threshold_value
         global glob_modulation_first
@@ -672,11 +570,11 @@ class ModulationFreqServer(SensorHandlingServer):
                 if (relative_pitch > 0):   #  relative_pitch > threshold
                     # 0.49 & 0.4 are to normalize it to half tone. remove those to get one tone pitch
                     glob_modulation_sent_pitch = int(
-                        self.Cmax_0_5 + float(controller.max)*0.49 / self.pitch_axis.range * (pitch - self.pitch_axis.upper_margin))
+                        self.Cmax_0_5 + float(controller.max)*0.3 / self.pitch_axis.range * (pitch - self.pitch_axis.upper_margin)) #9/4/2018 changed 0.49 to 0.3
                     midi_msg = controller.make_message(glob_modulation_sent_pitch)
                 else: # relative_pitch < -threshold
                     glob_modulation_sent_pitch = int(
-                        self.Cmax_0_5 + float(controller.max)*0.409 / self.pitch_axis.range * (pitch - self.pitch_axis.lower_margin))
+                        self.Cmax_0_5 + float(controller.max)*0.2 / self.pitch_axis.range * (pitch - self.pitch_axis.lower_margin)) #9/4/2018 changed 0.409 to 0.2
                     midi_msg = controller.make_message(glob_modulation_sent_pitch)
                 self.midiout.send_message(midi_msg)
                 self.last_time = time.time()
@@ -717,6 +615,217 @@ class ModulationFreqServer(SensorHandlingServer):
 #        print 'modulation: after update_progressbar part'
 
 
+class OurBluetoothSocket(object):
+    def __init__(self, address):
+        self._address = address
+        self._socket = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+
+    def connect(self):
+        print 'Connecting to %s...' % (self._address, )
+        try:
+            self._socket.connect(self._address)
+        except Exception as e:
+            print e
+
+        # Set data mode to RAW_DATA_FORMAT
+        self._socket.send('A')
+        print 'Connected'
+
+    def recv(self, length):
+        return self._socket.recv(length)
+
+    def numbers_stream(self):
+        data = ''
+        while True:
+            data += self.recv(1000)
+            chunks = data.split('\r\n')
+            data = chunks[-1]
+            for chunk in chunks[:-1]:
+                fields = [float(num) for num in chunk.split(',')]
+                # In RAW_DATA_FORMAT mode, the data contains 6 fields:
+                # mpu6050_acc_x, mpu6050_acc_y, mpu6050_acc_z, mpu6050_gyro_angle_x, mpu6050_gyro_angle_y, mpu6050_gyro_angle_z
+                # We want the first 3
+                yield tuple(fields[:3])
+
+class PitchFreqBluetoohClient(threading.Thread):
+    def __init__(self,
+                 midiout,
+                 address):
+        super(PitchFreqBluetoohClient, self).__init__()
+
+        pitch_undefined_controller = MidiController(0x03)
+        pitch_wheel = PitchWheel()
+
+        print 'pitchfreqserver\tcreating sensorhandlingserver...'
+        yaw_to=pitch_undefined_controller
+        pitch_to=pitch_wheel
+        roll_to=pitch_undefined_controller
+        modulation_undefined_controller = MidiController(0x03)
+        modulation_wheel = ModulationWheel()
+        self.last_time = time.time()
+        self.last_print_time = time.time()
+        self.last_vals = [0, 0, 0]
+        self.min_interval = 0.05     # minimum time interval to send midi massage- TO CAHNGE
+        self.axis_num_to_contrlr = [yaw_to, pitch_to, roll_to] # in same order as axes
+        # define an instance for yaw, pitch, roll
+        self.yaw_axis = OrientationAxis(-180, 179) # 0 - North, 90 - East, -180 - South, -90 - east
+        #  OLD : pitch_axis = OrientationAxis(-90, 90) # assuming screen is up
+        self.pitch_axis = OrientationAxis(-110, 110) # assuming screen is up
+        # 0 - horizontal, -90 - negative vertical, 90 - positive vertical
+        self.roll_axis = OrientationAxis(-90, 90)  # assuming screen is up
+        # -90 - screen to the left, +90 - screen to the right.
+        self.axes = [self.yaw_axis, self.pitch_axis, self.roll_axis]
+
+        self.midiout = midiout
+        self.Cmax_0_5 = self.axis_num_to_contrlr[
+                            1].max / 2 # keep the value of controller.max/2 to save real-time calculations
+
+
+        self._socket = OurBluetoothSocket(address=address)
+        global glob_modulation_first
+        glob_modulation_first = 1
+
+    def connect(self):
+        self._socket.connect()
+
+    def run(self):
+        for pitch in self._socket.numbers_stream():
+            try:
+                self.handle_orientation(pitch)
+            except Exception as e:
+                print 'ERROR: %s' % (e, )
+
+    def handle_orientation(self, yaw_pitch_roll):
+        # 5.4.18 multiply by -100
+#        yaw_pitch_roll = tuple([-100 * d for d in yaw_pitch_roll])
+
+# 6.4.18   hand in 30 degrees angle at rest. multiply by less than 100
+        yaw_pitch_roll = tuple([-70 * d for d in yaw_pitch_roll])
+
+
+        print 'Bluetooth sensor orientation: %s' % (yaw_pitch_roll, )
+        global glob_pitch_elevation_value
+        global glob_pitch_threshold_value
+        global glob_pitch_first
+        global glob_pitch_bias
+        global glob_pitch_bias_buffer_size
+        global pitch_bias_buffer_pointer
+        global pitch_bias_buffer
+        'Translate orientation values to pitch control'
+        # if its the first time the function runs, set the parameters axis.min axis.max:
+        if dbg_print:
+            print "yaw_pitch_roll ",yaw_pitch_roll
+        ## 13-4-15 21:49  see any wi fi data in.
+
+        yaw_pitch_roll2 = list(yaw_pitch_roll)
+        if dbg_print:
+            print 'mila ' , yaw_pitch_roll
+        ## 13-4-15 21:49  see any wi fi data in.
+
+        # 5.4.2018 length or  width   of  sensor  on arm hand  line
+###        pitch = yaw_pitch_roll2[0]
+#   here sensor lenght in direction of length of arm,
+#   but thats less good to tie it to watch band.
+
+
+        pitch = yaw_pitch_roll2[1]
+#^ sensor 90 degrees to arm length which points to fingers.
+#  sensor in line with watch band.
+
+
+        glob_pitch_elevation_value = pitch
+        # DEBUGGER
+        #import pdb ; pdb.set_trace()
+        if (glob_pitch_first == 1):
+            self.pitch_axis.set_axis(int(pitch))
+
+            glob_pitch_bias = pitch
+            initiate_pitch_bias_buffer(glob_pitch_bias)
+            # version 8.3 : consider changing or deleting the next line:
+            midi_msg = self.axis_num_to_contrlr[1].make_message(
+                int(self.Cmax_0_5 + float(self.axis_num_to_contrlr[1].max) / self.pitch_axis.range * (pitch - self.pitch_axis.mid)))
+            self.midiout.send_message(midi_msg)
+
+
+            # if its the first time the function runs, then Print the parameters rcvd ,  in any case ,  to see tkinut.
+            print "yaw_pitch_roll ",yaw_pitch_roll
+            ## 13-4-15 21:49  see any wi fi data in.
+
+            glob_pitch_first = 0
+            print "pitch recieved:   ", pitch  # 11.11.2013 canceled prints
+        ## 13-4-15 21:49  see any wi fi data in.
+
+        # Fixing axis_val to ergonomic limits
+        pitch = put_between(pitch, self.pitch_axis.min, self.pitch_axis.max)
+        if dbg_print:
+            print "pitch after fix:  ", pitch  # 11.11.2013 canceled prints
+        ## 13-4-15 21:49  see any wi fi data in.
+
+        # 20/10/2013 adding filter: send massage only if movement passed the threshold(far enough from mid point that was set in the start)
+        relative_pitch = pitch - self.pitch_axis.mid
+        # older than 9/4/2018: is_beyond_threshold = [abs(relative_pitch) > glob_pitch_threshold_value]
+        is_beyond_threshold = [relative_pitch) > glob_pitch_threshold_value]
+
+        deltas = [abs(last_val - val) for last_val, val in zip(self.last_vals, yaw_pitch_roll)]
+        is_delta_big = [delta > 0 for delta, axis in zip(deltas, self.axes)]
+        controller = self.axis_num_to_contrlr[1]  # controller gets the "class pitchWheel"
+        # controller.max = 16383 (2^14 - 1)
+
+        global glob_pitch_sent_pitch  # for gui
+        if (time.time() - self.last_time > self.min_interval) and any(is_delta_big):
+            # 9/4/2018 the 30 value is the minimal yaw(fingers down) angle, which enables the pitch band
+            if (is_beyond_threshold == [True]):
+                print 'is beyond threshold '
+                if (relative_pitch > 0):   #  relative_pitch > threshold
+                    # 0.49 & 0.4 are to normalize it to half tone. remove those to get one tone pitch
+                    glob_pitch_sent_pitch = int(
+                        self.Cmax_0_5 + float(controller.max)*0.49 / self.pitch_axis.range * (pitch - self.pitch_axis.upper_margin))
+                    midi_msg = controller.make_message(glob_pitch_sent_pitch)
+                else: # relative_pitch < -threshold
+                    glob_pitch_sent_pitch = int(
+                        self.Cmax_0_5 + float(controller.max)*0.49 / self.pitch_axis.range * (pitch - self.pitch_axis.lower_margin))
+                    midi_msg = controller.make_message(glob_pitch_sent_pitch)
+                self.midiout.send_message(midi_msg)
+                self.last_time = time.time()
+                self.last_vals = yaw_pitch_roll
+            else:   # player wants the bias pitch
+                glob_pitch_sent_pitch = int(self.Cmax_0_5)
+                midi_msg = self.axis_num_to_contrlr[1].make_message(glob_pitch_sent_pitch)
+                self.midiout.send_message(midi_msg)
+
+                if dbg_print:
+                    print midi_msg # if debug. was ovrflow
+
+                # set adaptive bias - moving average
+                pitch_bias_buffer_pointer += 1
+                pitch_bias_buffer[pitch_bias_buffer_pointer % glob_pitch_bias_buffer_size] = pitch;
+
+                glob_pitch_bias += (pitch_bias_buffer[(pitch_bias_buffer_pointer) % glob_pitch_bias_buffer_size] - pitch_bias_buffer[(pitch_bias_buffer_pointer+1) % glob_pitch_bias_buffer_size]) / glob_pitch_bias_buffer_size
+                self.pitch_axis.set_axis(glob_pitch_bias)
+        else:
+            print 'Not inside if'
+
+
+        print glob_pitch_sent_pitch
+
+        if dbg_print:
+
+            print "pitch: glob_pitch_sent_pitch \n"
+            print glob_pitch_sent_pitch
+
+            print "pitch: glob_pitch_bias \n"
+            print glob_pitch_bias
+        # prints were in remark in production version ^
+#        print 'pitch: before update_progressbar part'
+        global gui
+        try:
+            gui.update_pitchfreq_progressbar(glob_pitch_sent_pitch, glob_pitch_elevation_value, glob_pitch_bias)
+            if dbg_print:
+                print 'pitch: after gui.update_progressbar'
+        except Exception, e:
+            print 'pitch: error: %s' % e
+
+
 class MidiInputCallback(object):
     def __init__(self, midiout, do_prints=False):
         self.midiout = midiout
@@ -727,103 +836,96 @@ class MidiInputCallback(object):
         if (message[1] > 55):
             self.midiout.send_message(message)
 
-#################
-### MAIN #####3##
-#################
-# Get bind addresses
-#-----------------------------
-# 1. Modulation bind addresses
-##    modulation_bind_address = [BIND_IP, MODULATION_LISTENING_PORT]
-modulation_bind_addresses = socket.getaddrinfo(socket.gethostname(), MODULATION_LISTENING_PORT, socket.AF_INET,
-                     socket.SOCK_DGRAM)
-modulation_bind_address = [t[-1] for t in modulation_bind_addresses][0]
-print "listening for modulation on %s" % (modulation_bind_address, )
+def main():
+     # Get midi interfaces
+    #-----------------------------
+    midiout = rtmidi.MidiOut()
+    midiin = rtmidi.MidiIn()
 
-# 2. Pitch bind address
-#pitch_bind_address = (BIND_IP, PITCH_LISTENING_PORT)
-pitch_bind_addresses = socket.getaddrinfo(socket.gethostname(), PITCH_LISTENING_PORT, socket.AF_INET,
-                     socket.SOCK_DGRAM)
-# sock_addrs gets the IP , Port of the computer
-#  t gets 4 elements as a list. the last element is the IP, Port
-pitch_bind_address = [t[-1] for t in pitch_bind_addresses][0]
-print "listening for pitch on %s" % (pitch_bind_address, )
+    #set midi out port
+    out_ports = midiout.get_ports()
+    out_port = out_ports.index(MIDI_LOOP_OUT)
+    midiout.open_port(out_port)
+    print "MIDI sent to %s" % (MIDI_LOOP_OUT, )
 
-# Get midi interfaces
-#-----------------------------
-midiout = rtmidi.MidiOut()
-midiin = rtmidi.MidiIn()
+    #set midi - in port
+    in_ports = midiin.get_ports() # checks automaticaly for midi ports.
+    print "searching for midi input ports \n"
+    for in_port, in_port_name in enumerate(in_ports):    # should find the komplete audio 6 sound card..
+        if "Loop" not in in_port_name:
+            midiin.open_port(in_port)
+            print "MIDI received from %s" % (in_port_name, )
+            midiin.set_callback(MidiInputCallback(midiout, )) # setting the handler for data(notes)
 
-#set midi out port
-out_ports = midiout.get_ports()
-out_port = out_ports.index(MIDI_LOOP_OUT)
-midiout.open_port(out_port)
-print "MIDI sent to %s" % (MIDI_LOOP_OUT, )
+    # Create servers
+    #-----------------------------
+     # 1. Modulation bind addresses
+    ##    modulation_bind_address = [BIND_IP, MODULATION_LISTENING_PORT]
+    modulation_bind_addresses = socket.getaddrinfo(socket.gethostname(), MODULATION_LISTENING_PORT, socket.AF_INET,
+                         socket.SOCK_DGRAM)
+    modulation_bind_address = [t[-1] for t in modulation_bind_addresses][0]
+    print "listening for modulation on %s" % (modulation_bind_address, )
 
-#set midi - in port
-in_ports = midiin.get_ports() # checks automaticaly for midi ports.
-print "searching for midi input ports \n"
-for in_port, in_port_name in enumerate(in_ports):    # should find the komplete audio 6 sound card..
-    if "Loop" not in in_port_name:
-        midiin.open_port(in_port)
-        print "MIDI received from %s" % (in_port_name, )
-        midiin.set_callback(MidiInputCallback(midiout, )) # setting the handler for data(notes)
+    ##    servers=[pitch_server, modulation_server ]
+    ##13-4-15  12:54
 
-# Create servers
-#-----------------------------
+    # Create servers
+    #-----------------------------
 
+    # # Modulation server
+    # global modulation_server
+    # try:
+    #     #global modulation_server
+    #     modulation_server = ModulationFreqServer(
+    #         modulation_bind_address,
+    #         midiout=midiout
+    #     )
+    #
+    #     print 'Modulation server is ready.'
+    # except Exception, e:
+    #     print 'Modulation server failed: %s' % (e, )
 
-# Modulation server
-try:
-    #global modulation_server
-    modulation_server = ModulationFreqServer(
-        modulation_bind_address,
-        midiout=midiout
-    )
+    # Pitch server
+    try:
+        print 'Trying to connect'
+        #global pitch_server
+        pitch_server = PitchFreqBluetoohClient(
+            midiout=midiout,
+            address=MUSIC_GLOVES_BLUETOOTH_SERVER_ADDRESS
+        )
 
+        while True:
+            try:
+                print 'Pitch bluetooth client is connecting...'
+                pitch_server.connect()
+                break
+            except Exception as e:
+                print 'Could not connect (will retry in 3 seconds): %s' % (e, )
+            time.sleep(3)
+        print 'Pitch bluetooth client is connected.'
+        print 'Bluetooth pitch server is ready.'
+    except Exception, e:
+        print 'Bluetooth pitch server failed: %s' % (e, )
 
-    print 'Modulation server is ready.'
-except Exception, e:
-    print 'Modulation server failed: %s' % (e, )
+    ## 13-4-15
+    ##    servers = [pitch_server, modulation_server ]
 
+    print 'Working...'
 
-# Pitch server
-try:
-    pitch_server = PitchFreqServer(
-        pitch_bind_address,
-        midiout=midiout
-    )
+    global gui
+    gui = Gui()
+    ###    servers = [pitch_server, modulation_server ]
+    ##13-4-15 try ^
+    pitch_server.start()
+    gui.mainloop()
+    raw_input("Press Enter to exit\n")
 
-    print 'Pitch server is ready.'
-except Exception, e:
-    print 'Pitch server failed: %s' % (e, )
+if __name__ == '__main__':
+    exit(main())
 
+#https://github.com/arduino12/music_gloves/blob/master/src/v2_esp32_bracelet/music_gloves/music_gloves.ino
 
-##    servers=[pitch_server, modulation_server ]
-##13-4-15  12:54
+# code of tilt sensor arad eizen  esp32  blu tooth micro 
 
+# https://stackoverflow.com/questions/21000680/how-to-find-visible-bluetooth-devices-in-python
 
-print 'Working...'
-
-# Start GUI
-
-## 13-4-15
-##    servers = [pitch_server, modulation_server ]
-
-
-gui = Gui()
-###    servers = [pitch_server, modulation_server ]
-##13-4-15 try ^
-
-gui.mainloop()
-raw_input("Press Enter to exit\n")
-
-
-
-# remarks :
-# 11-4-2015  added  sensor :  modulation wheel. now 2 sensors : modulation on pitch bend.
-# 13-4-15 - changing gui to include  2  sensor streams. COPY BUTONS FOR 2 TYPES - MOD, PITCH.
-# 13-4-15 - adding slides for mod, separating vars of mod in sliders from pitch.
-
-
-
- 

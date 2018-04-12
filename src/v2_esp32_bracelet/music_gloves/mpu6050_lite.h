@@ -92,6 +92,7 @@ void mpu6050_init()
 	// mpu6050_write(MPU6050_ACCEL_CONFIG, 0x00);
 	// mpu6050_write(MPU6050_PWR_MGMT_1, 0x01);
 	mpu6050_write(MPU6050_PWR_MGMT_1, 0x00);
+	delay(100);
 	mpu6050_last_read_millis = millis();
 	mpu6050_read();
 }
